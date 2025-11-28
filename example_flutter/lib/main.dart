@@ -194,6 +194,40 @@ class _JavaScriptPlaygroundState extends State<JavaScriptPlayground> {
                   ),
                 ),
                 _ExampleChip(
+                  label: 'Promise',
+                  onTap: () => _runExample('''
+// Promise 异步示例
+globalThis.result = "pending";
+
+Promise.resolve(42)
+  .then(v => v * 2)
+  .then(v => {
+    globalThis.result = "Result: " + v;
+    return v;
+  });
+
+// 执行待处理的异步任务
+std.evalScript("void 0"); // trigger job execution
+globalThis.result'''),
+                ),
+                _ExampleChip(
+                  label: 'Async Chain',
+                  onTap: () => _runExample('''
+// Promise 链式调用
+let steps = [];
+
+new Promise(resolve => {
+  steps.push("1. Created");
+  resolve(10);
+})
+.then(v => { steps.push("2. Got " + v); return v * 2; })
+.then(v => { steps.push("3. Got " + v); return v + 5; })
+.then(v => { steps.push("4. Final: " + v); });
+
+std.evalScript("void 0");
+steps'''),
+                ),
+                _ExampleChip(
                   label: 'Error',
                   onTap: () =>
                       _runExample('throw new Error("Test error message")'),

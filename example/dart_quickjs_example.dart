@@ -68,6 +68,58 @@ void main() {
     print('Users: ${runtime.eval('data.users')}');
     print('Count: ${runtime.eval('data.count')}');
 
+    // Async tasks (Promise)
+    print('\n=== Async Tasks (Promise) ===');
+    runtime.eval('''
+      globalThis.asyncResult = null;
+      globalThis.asyncStatus = "pending";
+      
+      Promise.resolve(42)
+        .then(value => {
+          globalThis.asyncResult = value * 2;
+          globalThis.asyncStatus = "fulfilled";
+          return globalThis.asyncResult;
+        })
+        .then(value => {
+          globalThis.asyncResult = "Final: " + value;
+        });
+    ''');
+    print(
+      'Before executePendingJobs: status = ${runtime.getGlobal('asyncStatus')}',
+    );
+    runtime.executePendingJobs();
+    print(
+      'After executePendingJobs: status = ${runtime.getGlobal('asyncStatus')}',
+    );
+    print('Async result: ${runtime.getGlobal('asyncResult')}');
+
+    // More complex async example with setTimeout simulation
+    print('\n=== Promise Chain ===');
+    runtime.eval('''
+      globalThis.steps = [];
+      
+      new Promise((resolve) => {
+        steps.push("Step 1: Promise created");
+        resolve(10);
+      })
+      .then(value => {
+        steps.push("Step 2: Got " + value);
+        return value * 2;
+      })
+      .then(value => {
+        steps.push("Step 3: Got " + value);
+        return value + 5;
+      })
+      .then(value => {
+        steps.push("Step 4: Final value = " + value);
+      });
+    ''');
+    runtime.executePendingJobs();
+    final steps = runtime.getGlobal('steps') as List;
+    for (final step in steps) {
+      print('  $step');
+    }
+
     // Error handling
     print('\n=== Error Handling ===');
     try {
