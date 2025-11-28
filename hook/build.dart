@@ -84,14 +84,16 @@ void main(List<String> args) async {
           '-fstack-protector-strong', // Stack protection
         ]);
 
+        // Disable computed goto / direct dispatch on Android
+        // This uses a jump table that some Android devices flag as "executing non-executable memory"
+        defines['DIRECT_DISPATCH'] = '0';
+
         // Special handling for ARM32 (armeabi-v7a)
         if (isArm32) {
           flags.addAll([
             '-marm', // Generate ARM code, not Thumb (more compatible)
             '-fno-omit-frame-pointer', // Keep frame pointer for debugging
             '-fno-strict-aliasing', // Disable strict aliasing
-            '-mfpu=neon', // Use NEON for floating point
-            '-mfloat-abi=softfp', // Soft float ABI for compatibility
           ]);
           // Disable NaN boxing on ARM32 to use consistent 16-byte JSValue struct
           // This matches our FFI bindings and avoids pointer packing issues
