@@ -16,6 +16,10 @@ void main(List<String> args) async {
 
     final packageName = input.packageName;
     final targetOS = input.config.code.targetOS;
+    final targetArch = input.config.code.targetArchitecture;
+
+    // Check if targeting 32-bit ARM
+    final isArm32 = targetArch == Architecture.arm;
 
     // QuickJS source files relative to package root
     const quickjsDir = 'third_party/quickjs-ng';
@@ -79,6 +83,20 @@ void main(List<String> args) async {
           '-fno-fast-math', // Ensure strict floating-point behavior
           '-fstack-protector-strong', // Stack protection
         ]);
+
+        // Special handling for ARM32 (armeabi-v7a)
+        if (isArm32) {
+          flags.addAll([
+            '-marm', // Generate ARM code, not Thumb (more compatible)
+            '-fno-omit-frame-pointer', // Keep frame pointer for debugging
+            '-fno-strict-aliasing', // Disable strict aliasing
+            '-mfpu=neon', // Use NEON for floating point
+            '-mfloat-abi=softfp', // Soft float ABI for compatibility
+          ]);
+          // Disable NaN boxing on ARM32 to use consistent 16-byte JSValue struct
+          // This matches our FFI bindings and avoids pointer packing issues
+          defines['JS_NAN_BOXING'] = '0';
+        }
       }
     } else {
       // MSVC requires experimental flag for C11 atomics support

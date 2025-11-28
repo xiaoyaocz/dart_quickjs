@@ -19,11 +19,23 @@ final class JSRuntime extends ffi.Opaque {}
 
 final class JSContext extends ffi.Opaque {}
 
-/// JSValue structure - 16 bytes: 8 bytes union + 8 bytes tag
+/// JSValue structure for non-NaN-boxing mode (64-bit systems and ARM32 with JS_NAN_BOXING=0)
+/// Layout: 8 bytes union + 8 bytes tag = 16 bytes total
+///
+/// The union contains:
+/// - int32 (4 bytes, for integers)
+/// - double (8 bytes, for float64)
+/// - ptr (4 or 8 bytes depending on platform)
+///
+/// We access it as a single 64-bit value and extract what we need.
 final class JSValue extends ffi.Struct {
+  /// The union value - stores int32, float64, or ptr depending on tag
+  /// For int32 values: only lower 32 bits are valid
+  /// For float64 values: all 64 bits represent the double
   @ffi.Int64()
   external int u;
 
+  /// The tag indicating the type of value stored
   @ffi.Int64()
   external int tag;
 }
@@ -387,10 +399,14 @@ extension JSValueExtension on JSValue {
   bool get hasRefCount => tag < 0;
 
   /// Gets the integer value (for int tag)
-  int get intValue => u;
+  /// In non-NaN-boxing mode, int32 is stored in the lower 32 bits of the union
+  int get intValue {
+    // Extract lower 32 bits as signed int32
+    return (u & 0xFFFFFFFF).toSigned(32);
+  }
 
   /// Gets the boolean value (for bool tag)
-  bool get boolValue => u != 0;
+  bool get boolValue => (u & 0xFFFFFFFF) != 0;
 
   /// Gets the float value (for float64 tag)
   double get floatValue {
