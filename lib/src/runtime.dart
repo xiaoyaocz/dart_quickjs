@@ -31,22 +31,35 @@ class JsRuntime {
   /// Whether the runtime has been disposed.
   bool _disposed = false;
 
+  /// Default stack size: 512KB (conservative for mobile devices)
+  static const int _defaultStackSize = 512 * 1024;
+
+  /// Default memory limit: 64MB
+  static const int _defaultMemoryLimit = 64 * 1024 * 1024;
+
   /// Creates a new JavaScript runtime.
   ///
-  /// [memoryLimit] is the memory limit in bytes (0 for no limit).
-  /// [maxStackSize] is the maximum stack size in bytes (0 for default).
-  JsRuntime({int memoryLimit = 0, int maxStackSize = 0}) {
+  /// [memoryLimit] is the memory limit in bytes (defaults to 64MB, 0 for no limit).
+  /// [maxStackSize] is the maximum stack size in bytes (defaults to 512KB, 0 for QuickJS default).
+  ///
+  /// For devices with limited resources (e.g., Android TV boxes), consider using
+  /// smaller values to prevent crashes.
+  JsRuntime({int? memoryLimit, int? maxStackSize}) {
     _runtime = JS_NewRuntime();
     if (_runtime == nullptr) {
       throw JsException('Failed to create JavaScript runtime');
     }
 
-    if (memoryLimit > 0) {
-      JS_SetMemoryLimit(_runtime, memoryLimit);
+    // Set memory limit (default 64MB for safety on mobile devices)
+    final effectiveMemoryLimit = memoryLimit ?? _defaultMemoryLimit;
+    if (effectiveMemoryLimit > 0) {
+      JS_SetMemoryLimit(_runtime, effectiveMemoryLimit);
     }
 
-    if (maxStackSize > 0) {
-      JS_SetMaxStackSize(_runtime, maxStackSize);
+    // Set stack size (default 512KB to prevent stack overflow on limited devices)
+    final effectiveStackSize = maxStackSize ?? _defaultStackSize;
+    if (effectiveStackSize > 0) {
+      JS_SetMaxStackSize(_runtime, effectiveStackSize);
     }
 
     _context = JS_NewContext(_runtime);

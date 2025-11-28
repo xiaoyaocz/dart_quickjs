@@ -73,6 +73,12 @@ void main(List<String> args) async {
       // On Android, explicitly link libm for math functions like scalbn
       if (targetOS == OS.android) {
         libraries.add('m'); // libm - math library
+        // Improve compatibility with older Android devices (e.g., Android 9)
+        // Disable some optimizations that may cause issues on certain ARM devices
+        flags.addAll([
+          '-fno-fast-math', // Ensure strict floating-point behavior
+          '-fstack-protector-strong', // Stack protection
+        ]);
       }
     } else {
       // MSVC requires experimental flag for C11 atomics support
