@@ -38,7 +38,7 @@ class _JavaScriptPlaygroundState extends State<JavaScriptPlayground> {
   @override
   void initState() {
     super.initState();
-    _runtime = JsRuntime();
+    _runtime = JsRuntime(memoryLimit: 4 * 1024 * 1024, maxStackSize: 64 * 1024);
     _codeController.text = '// 输入 JavaScript 代码\n1 + 2 * 3';
   }
 
@@ -120,7 +120,7 @@ class _JavaScriptPlaygroundState extends State<JavaScriptPlayground> {
 
   void _resetRuntime() {
     _runtime.dispose();
-    _runtime = JsRuntime();
+    _runtime = JsRuntime(memoryLimit: 4 * 1024 * 1024, maxStackSize: 64 * 1024);
     setState(() {
       _output = '✅ Runtime 已重置';
     });

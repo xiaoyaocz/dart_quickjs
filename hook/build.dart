@@ -69,9 +69,15 @@ void main(List<String> args) async {
         '-Wno-unused-but-set-variable',
       ]);
 
-      // On Linux, tell Clang to use the system linker instead of looking in LLVM dir
+      // On Linux
       if (targetOS == OS.linux) {
-        flags.addAll(['-fuse-ld=bfd']); // Use GNU ld (binutils)
+        // Link math library explicitly
+        libraries.add('m');
+        // Add flags for better compatibility when used as a dependency
+        flags.addAll([
+          '-fPIC', // Position independent code (required for shared libraries)
+          '-fvisibility=hidden', // Hide internal symbols by default
+        ]);
       }
 
       // On Android, explicitly link libm for math functions like scalbn
