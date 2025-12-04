@@ -78,6 +78,10 @@ void main(List<String> args) async {
           '-fPIC', // Position independent code (required for shared libraries)
           '-fvisibility=hidden', // Hide internal symbols by default
         ]);
+        // Disable computed goto / direct dispatch on Linux
+        // This prevents SIGSEGV when the library is loaded by another application
+        // The jump table can trigger "Invalid permissions for mapped object" errors
+        defines['DIRECT_DISPATCH'] = '0';
       }
 
       // On Android, explicitly link libm for math functions like scalbn
