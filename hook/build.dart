@@ -76,7 +76,9 @@ void main(List<String> args) async {
         // Add flags for better compatibility when used as a dependency
         flags.addAll([
           '-fPIC', // Position independent code (required for shared libraries)
-          '-fvisibility=hidden', // Hide internal symbols by default
+          '-fno-strict-aliasing', // Disable strict aliasing optimizations
+          '-fno-omit-frame-pointer', // Keep frame pointer for better debugging
+          '-fwrapv', // Wrap signed integer overflow (safer behavior)
         ]);
         // Disable computed goto / direct dispatch on Linux
         // This prevents SIGSEGV when the library is loaded by another application
