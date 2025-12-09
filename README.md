@@ -22,6 +22,7 @@ QuickJS-ng JavaScript 引擎的 Dart/Flutter 绑定。
 - ⏳ 简化的异步执行 (`evalAsync`)
 - ⏱️ Timer API (setTimeout/setInterval)
 - 📝 Console 日志捕获
+- 🔤 Encoding API (TextEncoder/TextDecoder/Base64)
 
 ## 快速开始
 
@@ -222,6 +223,7 @@ final runtime = JsRuntime(
 - `enableFetch`: 启用 JavaScript `fetch()` API
 - `enableConsole`: 启用 `console.log/warn/error/info/debug` 捕获
 - `enableTimer`: 启用 `setTimeout`/`setInterval`/`clearTimeout`/`clearInterval`
+- `enableEncoding`: 启用 `TextEncoder`/`TextDecoder`/`atob`/`btoa`
 - `httpClient`: 提供自定义 `http.Client` 用于 fetch 请求
 
 ### Console 日志捕获
@@ -360,24 +362,114 @@ runtime.dispose();
 - ✅ `clearTimeout(id)` - 取消延迟执行
 - ✅ `clearInterval(id)` - 取消周期执行
 
+### Encoding API (TextEncoder/TextDecoder/Base64)
+
+当启用 `enableEncoding` 时，可以使用标准的文本编码和 Base64 API：
+
+```dart
+final runtime = JsRuntime(
+  config: JsRuntimeConfig(enableEncoding: true),
+);
+
+// TextEncoder - 将字符串编码为 UTF-8 字节
+final bytes = runtime.eval('''
+  const encoder = new TextEncoder();
+  const text = 'Hello, 世界!';
+  const bytes = encoder.encode(text);
+  Array.from(bytes);
+''');
+print('UTF-8 bytes: $bytes');
+
+// TextDecoder - 将 UTF-8 字节解码为字符串
+final text = runtime.eval('''
+  const decoder = new TextDecoder();
+  const bytes = new Uint8Array([72, 101, 108, 108, 111]);
+  decoder.decode(bytes);
+''');
+print('Decoded text: $text'); // Hello
+
+// Base64 编码 - btoa()
+final base64 = runtime.eval('''
+  const text = 'Hello World';
+  btoa(text);
+''');
+print('Base64: $base64'); // SGVsbG8gV29ybGQ=
+
+// Base64 解码 - atob()
+final decoded = runtime.eval('''
+  const base64 = 'SGVsbG8gV29ybGQ=';
+  atob(base64);
+''');
+print('Decoded: $decoded'); // Hello World
+
+// 完整的编码/解码流程
+runtime.eval('''
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  
+  // 1. 文本 -> UTF-8 字节
+  const text = '你好，世界! 😀';
+  const bytes = encoder.encode(text);
+  console.log('Bytes:', Array.from(bytes));
+  
+  // 2. UTF-8 字节 -> 文本
+  const decoded = decoder.decode(bytes);
+  console.log('Decoded:', decoded);
+  
+  // 3. 二进制数据 -> Base64
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  const base64 = btoa(binary);
+  console.log('Base64:', base64);
+  
+  // 4. Base64 -> 二进制数据
+  const decodedBinary = atob(base64);
+  const decodedBytes = new Uint8Array(decodedBinary.length);
+  for (let i = 0; i < decodedBinary.length; i++) {
+    decodedBytes[i] = decodedBinary.charCodeAt(i);
+  }
+  
+  // 5. 二进制数据 -> 文本
+  const finalText = decoder.decode(decodedBytes);
+  console.log('Final:', finalText);
+''');
+
+runtime.dispose();
+```
+
+支持的 Encoding API：
+- ✅ `TextEncoder` - UTF-8 文本编码器
+  - `encode(string)` - 编码字符串为 Uint8Array
+  - `encodeInto(string, uint8array)` - 编码到已存在的缓冲区
+- ✅ `TextDecoder` - UTF-8 文本解码器
+  - `decode(uint8array)` - 解码字节数组为字符串
+  - 支持 BOM 处理和错误处理选项
+- ✅ `btoa(string)` - 将 ASCII/Latin1 字符串编码为 Base64
+- ✅ `atob(base64)` - 将 Base64 字符串解码为 ASCII/Latin1
+
 ### Dart <-> JavaScript 双向通信 (JsBridge)
 
-JsBridge 提供了一个通用的 Dart 与 JavaScript 双向通信机制。配合 `evalAsync` 使用更加简洁：
+JsBridge 提供了一个通用的 Dart 与 JavaScript 双向通信机制：
+
+#### 基本用法
 
 ```dart
 import 'package:dart_quickjs/dart_quickjs.dart';
 
 void main() async {
-  // 使用配置创建运行时，自动启用 fetch 和 console
+  // 创建运行时（启用 fetch 会自动创建 bridge）
   final runtime = JsRuntime(
     config: JsRuntimeConfig(
       enableFetch: true,
       enableConsole: true,
     ),
   );
+  final bridge = runtime.bridge!;
 
-  // 注册 Dart 处理器，可以从 JavaScript 调用
-  runtime.bridge!.registerHandler('math', (method, args) {
+  // 1. 注册 Dart 处理器，可以从 JavaScript 调用
+  bridge.registerHandler('math', (method, args) {
     switch (method) {
       case 'add':
         return (args[0] as num) + (args[1] as num);
@@ -388,16 +480,209 @@ void main() async {
     }
   });
 
-  // 使用 evalAsync 调用 Dart 函数（自动处理 Promise）
-  final result = await runtime.evalAsync('''
-    return await __dart_bridge__.call('math', 'add', [10, 20]);
+  // 2. 从 JavaScript 调用 Dart 函数 - 使用 evalAsync 自动处理
+  await runtime.evalAsync('''
+    const sum = await __dart_bridge__.call('math', 'add', [10, 20]);
+    console.log('Sum:', sum); // 30
+    
+    const product = await __dart_bridge__.call('math', 'multiply', [5, 6]);
+    console.log('Product:', product); // 30
   ''');
-  print(result); // 30
 
-  // 注册异步处理器
-  runtime.bridge!.registerHandler('async', (method, args) async {
-    if (method == 'compute') {
-      await Future.delayed(Duration(milliseconds: 100));
+  runtime.dispose();
+}
+```
+
+#### 异步处理器
+
+Dart 处理器可以返回 Future 来处理异步操作：
+
+```dart
+// 注册异步处理器
+bridge.registerHandler('api', (method, args) async {
+  if (method == 'fetchUser') {
+    // 模拟异步操作
+    await Future.delayed(Duration(milliseconds: 100));
+    return {
+      'id': args[0],
+      'name': 'User ${args[0]}',
+      'email': 'user${args[0]}@example.com',
+    };
+  }
+  return null;
+});
+
+// JavaScript 调用 - 使用 evalAsync 自动处理
+await runtime.evalAsync('''
+  const user = await __dart_bridge__.call('api', 'fetchUser', [123]);
+  console.log('User:', JSON.stringify(user));
+''');
+```
+
+#### 从 Dart 调用 JavaScript
+
+JsBridge 也支持从 Dart 调用 JavaScript 函数：
+
+```dart
+// 定义 JavaScript 函数
+runtime.eval('''
+  globalThis.jsUtils = {
+    greet: function(name) {
+      return 'Hello, ' + name + '!';
+    },
+    
+    processData: function(data) {
+      return data.map(item => item.toUpperCase());
+    }
+  };
+''');
+
+// 从 Dart 调用 JavaScript 函数（同步）
+final greeting = bridge.callJs('jsUtils.greet', ['Alice']);
+print(greeting); // Hello, Alice!
+
+final processed = bridge.callJs('jsUtils.processData', [
+  ['apple', 'banana', 'cherry']
+]);
+print(processed); // [APPLE, BANANA, CHERRY]
+
+// 调用异步 JavaScript 函数
+runtime.eval('''
+  globalThis.asyncFunc = async function(value) {
+    // 某些异步操作
+    return value * 2;
+  };
+''');
+
+final result = await bridge.callJsAsync('asyncFunc', [21]);
+print(result); // 42
+```
+
+#### 双向通信
+
+Dart 和 JavaScript 可以相互调用：
+
+```dart
+// Dart 处理器调用 JavaScript
+bridge.registerHandler('process', (method, args) {
+  if (method == 'transform') {
+    // Dart 调用 JavaScript 进行转换
+    final jsResult = bridge.callJs('jsUtils.processData', args);
+    
+    // 在 Dart 中进行额外处理
+    return {
+      'original': args,
+      'transformed': jsResult,
+      'count': (jsResult as List).length,
+    };
+  }
+  return null;
+});
+
+// JavaScript 调用 Dart（Dart 再调用回 JavaScript）- 使用 evalAsync
+await runtime.evalAsync('''
+  const result = await __dart_bridge__.call('process', 'transform', [
+    ['hello', 'world']
+  ]);
+  console.log('Result:', JSON.stringify(result));
+''');
+```
+
+#### 错误处理
+
+```dart
+// Dart 处理器抛出异常
+bridge.registerHandler('error', (method, args) {
+  throw Exception('Something went wrong!');
+});
+
+// JavaScript 捕获错误 - 使用 evalAsync
+await runtime.evalAsync('''
+  try {
+    await __dart_bridge__.call('error', 'test', []);
+  } catch (e) {
+    console.error('Caught error:', e.message);
+  }
+''');
+
+// Dart 调用 JavaScript 时的错误处理
+try {
+  bridge.callJs('nonExistentFunction');
+} catch (e) {
+  print('Error: $e');
+}
+```
+
+#### 多个模块
+
+可以注册多个处理器模块：
+
+```dart
+// 数学模块
+bridge.registerHandler('math', (method, args) {
+  switch (method) {
+    case 'add': return (args[0] as num) + (args[1] as num);
+    case 'subtract': return (args[0] as num) - (args[1] as num);
+  }
+  return null;
+});
+
+// 字符串模块
+bridge.registerHandler('string', (method, args) {
+  switch (method) {
+    case 'uppercase': return (args[0] as String).toUpperCase();
+    case 'reverse': return (args[0] as String).split('').reversed.join('');
+  }
+  return null;
+});
+
+// 从 JavaScript 调用不同模块 - 使用 evalAsync
+await runtime.evalAsync('''
+  const sum = await __dart_bridge__.call('math', 'add', [5, 3]);
+  const upper = await __dart_bridge__.call('string', 'uppercase', ['hello']);
+  console.log(sum, upper); // 8 HELLO
+''');
+
+// 移除处理器
+bridge.unregisterHandler('math');
+```
+
+#### 配合 JsRuntimeConfig 使用（推荐）
+
+使用 `JsRuntimeConfig` 创建运行时时，bridge 会自动创建（需要启用 `enableFetch`）：
+
+```dart
+final runtime = JsRuntime(
+  config: JsRuntimeConfig(
+    enableFetch: true,    // 启用 fetch 会自动创建 bridge
+    enableConsole: true,
+  ),
+);
+
+// bridge 已自动创建，无需手动创建
+runtime.bridge!.registerHandler('myHandler', (method, args) {
+  return 'response';
+});
+
+// 使用 evalAsync 自动处理所有异步操作（包括 bridge 请求）
+final result = await runtime.evalAsync('''
+  return await __dart_bridge__.call('myHandler', 'test', []);
+''');
+print(result); // response
+
+runtime.dispose();
+```
+
+**重要提示**：
+- 使用 `evalAsync` 时，**不需要**手动调用 `bridge.processRequests()` 和 `runtime.executePendingJobs()`
+- `evalAsync` 会自动处理所有异步操作，包括 Promise、Fetch 请求、Timer 和 Bridge 通信
+- 这是推荐的使用方式，代码更简洁
+
+查看 [example/bridge_example.dart](example/bridge_example.dart) 获取完整示例。
+
+### 使用配置创建运行时 (推荐)
+
+使用 `JsRuntimeConfig` 创建运行时是最简单的方式，它会自动配置所有功能：
       return (args[0] as num) * 2;
     }
     throw Exception('Unknown method');

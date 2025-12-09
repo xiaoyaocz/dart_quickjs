@@ -12,5 +12,6 @@
 library;
 
 export 'console_polyfill.dart';
+export 'encoding_polyfill.dart';
 export 'fetch_polyfill.dart';
 export 'timer_polyfill.dart';

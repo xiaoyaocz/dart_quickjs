@@ -59,6 +59,12 @@ class JsRuntimeConfig {
   /// in the JavaScript context, powered by Dart's Timer.
   final bool enableTimer;
 
+  /// Enable the encoding polyfill.
+  ///
+  /// When enabled, provides `TextEncoder`, `TextDecoder`, `btoa()`, and `atob()`
+  /// in the JavaScript context for UTF-8 encoding/decoding and Base64 operations.
+  final bool enableEncoding;
+
   /// Custom http.Client for fetch requests (useful for testing or custom configuration).
   final dynamic httpClient;
 
@@ -66,6 +72,7 @@ class JsRuntimeConfig {
     this.enableFetch = false,
     this.enableConsole = false,
     this.enableTimer = false,
+    this.enableEncoding = false,
     this.httpClient,
   });
 
@@ -77,6 +84,7 @@ class JsRuntimeConfig {
     enableFetch: true,
     enableConsole: true,
     enableTimer: true,
+    enableEncoding: true,
   );
 }
 
@@ -107,6 +115,9 @@ class JsRuntime {
 
   /// The console polyfill instance (if enabled).
   ConsolePolyfill? _consolePolyfill;
+
+  /// The encoding polyfill instance (if enabled).
+  EncodingPolyfill? _encodingPolyfill;
 
   /// The bridge instance for Dart-JS communication.
   JsBridge? _bridge;
@@ -173,6 +184,9 @@ class JsRuntime {
 
   /// Returns the console polyfill instance (if enabled).
   ConsolePolyfill? get consolePolyfill => _consolePolyfill;
+
+  /// Returns the encoding polyfill instance (if enabled).
+  EncodingPolyfill? get encodingPolyfill => _encodingPolyfill;
 
   /// Returns the bridge instance for Dart-JS communication.
   JsBridge? get bridge => _bridge;
@@ -578,6 +592,12 @@ class JsRuntime {
       _timerPolyfill = TimerPolyfill(this);
       _timerPolyfill!.install();
       // New TimerPolyfill uses pure JS implementation, no bridge needed
+    }
+
+    // Initialize encoding polyfill
+    if (_config.enableEncoding) {
+      _encodingPolyfill = EncodingPolyfill(this);
+      _encodingPolyfill!.install();
     }
   }
 
