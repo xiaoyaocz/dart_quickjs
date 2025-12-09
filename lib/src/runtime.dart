@@ -2,6 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 
@@ -9,6 +10,8 @@ import 'package:ffi/ffi.dart';
 
 import 'exceptions.dart';
 import 'quickjs_bindings.g.dart';
+import 'bridge.dart';
+import 'polyfills/polyfills.dart';
 
 /// A JavaScript runtime powered by QuickJS-ng.
 ///
@@ -21,6 +24,62 @@ import 'quickjs_bindings.g.dart';
 ///
 /// runtime.dispose();
 /// ```
+/// Configuration for enabling polyfills in [JsRuntime].
+///
+/// Example:
+/// ```dart
+/// final config = JsRuntimeConfig(
+///   enableFetch: true,
+///   enableConsole: true,
+/// );
+/// final runtime = JsRuntime(config: config);
+///
+/// // fetch is now available in JavaScript
+/// final result = await runtime.evalAsync('''
+///   const response = await fetch('https://api.example.com/data');
+///   return await response.json();
+/// ''');
+/// ```
+class JsRuntimeConfig {
+  /// Enable the fetch API polyfill.
+  ///
+  /// When enabled, provides `fetch()`, `Response`, `Headers`, and `AbortController`
+  /// in the JavaScript context, powered by Dart's http package.
+  final bool enableFetch;
+
+  /// Enable the console polyfill.
+  ///
+  /// When enabled, provides `console.log()`, `console.error()`, etc.
+  /// Logs are stored and can be retrieved via [JsRuntime.consoleLogs].
+  final bool enableConsole;
+
+  /// Enable the timer polyfill.
+  ///
+  /// When enabled, provides `setTimeout()`, `setInterval()`, `clearTimeout()`, and `clearInterval()`
+  /// in the JavaScript context, powered by Dart's Timer.
+  final bool enableTimer;
+
+  /// Custom http.Client for fetch requests (useful for testing or custom configuration).
+  final dynamic httpClient;
+
+  const JsRuntimeConfig({
+    this.enableFetch = false,
+    this.enableConsole = false,
+    this.enableTimer = false,
+    this.httpClient,
+  });
+
+  /// A default configuration with no polyfills enabled.
+  static const none = JsRuntimeConfig();
+
+  /// A configuration with all polyfills enabled.
+  static const all = JsRuntimeConfig(
+    enableFetch: true,
+    enableConsole: true,
+    enableTimer: true,
+  );
+}
+
 class JsRuntime {
   /// The QuickJS runtime pointer.
   late final Pointer<JSRuntime> _runtime;
@@ -37,14 +96,42 @@ class JsRuntime {
   /// Default memory limit: 64MB
   static const int _defaultMemoryLimit = 64 * 1024 * 1024;
 
+  /// The configuration for this runtime.
+  final JsRuntimeConfig _config;
+
+  /// The fetch polyfill instance (if enabled).
+  FetchPolyfill? _fetchPolyfill;
+
+  /// The timer polyfill instance (if enabled).
+  TimerPolyfill? _timerPolyfill;
+
+  /// The console polyfill instance (if enabled).
+  ConsolePolyfill? _consolePolyfill;
+
+  /// The bridge instance for Dart-JS communication.
+  JsBridge? _bridge;
+
+  /// Stream controller for console log events.
+  StreamController<JsConsoleLog>? _consoleLogController;
+
   /// Creates a new JavaScript runtime.
   ///
   /// [memoryLimit] is the memory limit in bytes (defaults to 64MB, 0 for no limit).
   /// [maxStackSize] is the maximum stack size in bytes (defaults to 512KB, 0 for QuickJS default).
+  /// [config] is the configuration for enabling polyfills.
   ///
   /// For devices with limited resources (e.g., Android TV boxes), consider using
   /// smaller values to prevent crashes.
-  JsRuntime({int? memoryLimit, int? maxStackSize}) {
+  JsRuntime({
+    int? memoryLimit,
+    int? maxStackSize,
+    JsRuntimeConfig config = JsRuntimeConfig.none,
+  }) : _config = config {
+    // Initialize console log stream controller if console is enabled
+    if (_config.enableConsole) {
+      _consoleLogController = StreamController<JsConsoleLog>.broadcast();
+    }
+
     _runtime = JS_NewRuntime();
     if (_runtime == nullptr) {
       throw JsException('Failed to create JavaScript runtime');
@@ -67,10 +154,65 @@ class JsRuntime {
       JS_FreeRuntime(_runtime);
       throw JsException('Failed to create JavaScript context');
     }
+
+    // Initialize polyfills based on configuration
+    _initializePolyfills();
   }
 
   /// Returns true if this runtime has been disposed.
   bool get isDisposed => _disposed;
+
+  /// Returns the configuration for this runtime.
+  JsRuntimeConfig get config => _config;
+
+  /// Returns the fetch polyfill instance (if enabled).
+  FetchPolyfill? get fetchPolyfill => _fetchPolyfill;
+
+  /// Returns the timer polyfill instance (if enabled).
+  TimerPolyfill? get timerPolyfill => _timerPolyfill;
+
+  /// Returns the console polyfill instance (if enabled).
+  ConsolePolyfill? get consolePolyfill => _consolePolyfill;
+
+  /// Returns the bridge instance for Dart-JS communication.
+  JsBridge? get bridge => _bridge;
+
+  /// Returns console logs captured from JavaScript (if console polyfill is enabled).
+  ///
+  /// This automatically syncs logs from JavaScript before returning.
+  List<JsConsoleLog> get consoleLogs {
+    if (_consolePolyfill == null) return [];
+    return _consolePolyfill!.logs;
+  }
+
+  /// Clears all captured console logs.
+  void clearConsoleLogs() {
+    _consolePolyfill?.clearLogs();
+  }
+
+  /// Stream of console logs for real-time monitoring.
+  ///
+  /// Only available when console polyfill is enabled.
+  /// Each log event is emitted immediately when JavaScript code calls console methods.
+  ///
+  /// Example:
+  /// ```dart
+  /// final runtime = JsRuntime(
+  ///   config: JsRuntimeConfig(enableConsole: true),
+  /// );
+  ///
+  /// // Listen to console logs in real-time
+  /// runtime.onConsoleLog.listen((log) {
+  ///   print('[${log.level}] ${log.message}');
+  /// });
+  ///
+  /// runtime.eval('console.log("Hello");');
+  /// // Immediately prints: [log] Hello
+  /// ```
+  Stream<JsConsoleLog> get onConsoleLog {
+    _consoleLogController ??= StreamController<JsConsoleLog>.broadcast();
+    return _consoleLogController!.stream;
+  }
 
   /// Evaluates JavaScript code and returns the result.
   ///
@@ -98,21 +240,129 @@ class JsRuntime {
 
     final codePtr = code.toNativeUtf8();
     final filenamePtr = filename.toNativeUtf8();
+    final codeLength = codePtr.length; // Use byte length, not character count
 
     try {
       final flags = asModule ? JsEvalFlags.typeModule : JsEvalFlags.typeGlobal;
-      final result = JS_Eval(
-        _context,
-        codePtr,
-        code.length,
-        filenamePtr,
-        flags,
-      );
+      final result = JS_Eval(_context, codePtr, codeLength, filenamePtr, flags);
 
-      return _jsValueToDart(result, freeValue: true);
+      final dartResult = _jsValueToDart(result, freeValue: true);
+
+      // Sync console logs after evaluation (protected against recursion)
+      _consolePolyfill?.syncLogs();
+
+      return dartResult;
     } finally {
       calloc.free(codePtr);
       calloc.free(filenamePtr);
+    }
+  }
+
+  /// Evaluates JavaScript code that may contain async operations and returns a Future.
+  ///
+  /// This method is designed for executing async JavaScript code (code that uses
+  /// `await`, returns a Promise, or uses the fetch API when enabled).
+  ///
+  /// [code] is the JavaScript code to evaluate. It will be wrapped in an async IIFE
+  /// (Immediately Invoked Function Expression) if it contains `await` or `return`.
+  /// [filename] is the filename used in error messages (defaults to '<evalAsync>').
+  ///
+  /// Example:
+  /// ```dart
+  /// // Simple async code
+  /// final result = await runtime.evalAsync('''
+  ///   const response = await fetch('https://api.example.com/data');
+  ///   return await response.json();
+  /// ''');
+  ///
+  /// // Or with explicit Promise
+  /// final result = await runtime.evalAsync('''
+  ///   return new Promise(resolve => setTimeout(() => resolve(42), 100));
+  /// ''');
+  /// ```
+  ///
+  /// Returns a Future that completes with the result converted to a Dart value.
+  ///
+  /// Throws [JsException] if evaluation fails.
+  /// Throws [JsRuntimeDisposedException] if the runtime has been disposed.
+  Future<dynamic> evalAsync(
+    String code, {
+    String filename = '<evalAsync>',
+    int maxWaitMs = 30000, // Maximum wait time (30 seconds default)
+  }) async {
+    _checkDisposed();
+
+    // Generate a unique result key
+    final resultKey =
+        '__evalAsync_result_${DateTime.now().millisecondsSinceEpoch}_${code.hashCode}__';
+
+    // Wrap code in async IIFE to handle await and return statements
+    final wrappedCode =
+        '''
+      (async function() {
+        $code
+      })().then(function(__result__) {
+        globalThis['$resultKey'] = { success: true, value: __result__ };
+      }).catch(function(__error__) {
+        globalThis['$resultKey'] = { success: false, error: __error__.message || String(__error__) };
+      });
+    ''';
+
+    // Execute the wrapped code
+    eval(wrappedCode, filename: filename);
+
+    // Process requests in a loop until the result is ready
+    // Use time-based timeout instead of iteration count for better timer support
+    final startTime = DateTime.now();
+    const pollInterval = Duration(milliseconds: 10);
+
+    while (true) {
+      // Check timeout
+      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      if (elapsed > maxWaitMs) {
+        // Clean up the result key on timeout
+        eval('delete globalThis["$resultKey"];');
+        throw JsException(
+          'Async evaluation did not complete within ${maxWaitMs}ms timeout.',
+        );
+      }
+
+      // Process fetch requests if enabled
+      if (_fetchPolyfill != null) {
+        await _fetchPolyfill!.processRequests();
+      } else if (_bridge != null) {
+        await _bridge!.processRequests();
+      }
+
+      // Process timer callbacks if enabled
+      if (_timerPolyfill != null) {
+        _timerPolyfill!.processTimers();
+      }
+
+      // Execute pending jobs (Promises)
+      executePendingJobs();
+
+      // Check if the result is ready
+      final resultObj = getGlobal(resultKey);
+      if (resultObj != null) {
+        // Clean up the result key
+        eval('delete globalThis["$resultKey"];');
+
+        if (resultObj is Map) {
+          if (resultObj['success'] == true) {
+            return resultObj['value'];
+          } else {
+            throw JsException(
+              resultObj['error']?.toString() ?? 'Unknown async error',
+            );
+          }
+        }
+        throw JsException('Unexpected result type from async evaluation');
+      }
+
+      // Wait a short time to allow timers and other async operations to fire
+      // This is important for setTimeout/setInterval to work properly
+      await Future.delayed(pollInterval);
     }
   }
 
@@ -130,12 +380,13 @@ class JsRuntime {
 
     final codePtr = code.toNativeUtf8();
     final filenamePtr = filename.toNativeUtf8();
+    final codeLength = codePtr.length; // Use byte length, not character count
 
     try {
       final result = JS_Eval(
         _context,
         codePtr,
-        code.length,
+        codeLength,
         filenamePtr,
         JsEvalFlags.typeGlobal,
       );
@@ -291,7 +542,14 @@ class JsRuntime {
   void dispose() {
     if (_disposed) return;
 
+    // Clean up polyfills first (before setting _disposed flag)
+    _timerPolyfill?.dispose();
+
+    // Close console log stream
+    _consoleLogController?.close();
+
     _disposed = true;
+
     JS_FreeContext(_context);
     JS_FreeRuntime(_runtime);
   }
@@ -299,6 +557,36 @@ class JsRuntime {
   // ============================================================
   // Private methods
   // ============================================================
+
+  /// Initializes polyfills based on configuration.
+  void _initializePolyfills() {
+    // Initialize console polyfill
+    if (_config.enableConsole) {
+      _consolePolyfill = ConsolePolyfill(this, onLog: _emitConsoleLog);
+      _consolePolyfill!.install();
+    }
+
+    // Initialize fetch polyfill (which also creates a bridge)
+    if (_config.enableFetch) {
+      _fetchPolyfill = FetchPolyfill(this, client: _config.httpClient);
+      _fetchPolyfill!.install();
+      _bridge = _fetchPolyfill!.bridge;
+    }
+
+    // Initialize timer polyfill
+    if (_config.enableTimer) {
+      _timerPolyfill = TimerPolyfill(this);
+      _timerPolyfill!.install();
+      // New TimerPolyfill uses pure JS implementation, no bridge needed
+    }
+  }
+
+  /// Emits a console log event to listeners.
+  void _emitConsoleLog(JsConsoleLog log) {
+    if (_consoleLogController != null && !_consoleLogController!.isClosed) {
+      _consoleLogController!.add(log);
+    }
+  }
 
   void _checkDisposed() {
     if (_disposed) {

@@ -30,5 +30,7 @@ library;
 
 export 'src/runtime.dart';
 export 'src/exceptions.dart';
+export 'src/bridge.dart';
+export 'src/polyfills/polyfills.dart';
 
 // TODO: Export any libraries intended for clients of this package.

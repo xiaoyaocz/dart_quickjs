@@ -17,6 +17,11 @@ QuickJS-ng JavaScript 引擎的 Dart/Flutter 绑定。
 - ⚡ 支持 ES2023 语法
 - 🧹 自动内存管理和垃圾回收
 - 🔒 异常处理和错误信息
+- 🌐 内置 Fetch API 支持
+- 🔗 Dart <-> JavaScript 双向通信桥
+- ⏳ 简化的异步执行 (`evalAsync`)
+- ⏱️ Timer API (setTimeout/setInterval)
+- 📝 Console 日志捕获
 
 ## 快速开始
 
@@ -57,6 +62,55 @@ void main() {
     print(runtime.eval('Math.sqrt(16)')); // 4.0
   } finally {
     // 释放资源
+    runtime.dispose();
+  }
+}
+```
+
+### 异步执行 JavaScript (evalAsync)
+
+`evalAsync` 方法简化了异步 JavaScript 代码的执行，自动处理 Promise 和 fetch 请求：
+
+```dart
+import 'package:dart_quickjs/dart_quickjs.dart';
+
+void main() async {
+  // 使用配置创建运行时，自动启用 fetch polyfill
+  final runtime = JsRuntime(
+    config: JsRuntimeConfig(
+      enableFetch: true,
+      enableConsole: true,
+    ),
+  );
+
+  try {
+    // 简单的异步代码
+    final result = await runtime.evalAsync('''
+      const response = await fetch('https://jsonplaceholder.typicode.com/todos/1');
+      return await response.json();
+    ''');
+    print('Todo: ${result['title']}');
+
+    // POST 请求
+    final postResult = await runtime.evalAsync('''
+      const response = await fetch('https://jsonplaceholder.typicode.com/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Hello', body: 'World', userId: 1 })
+      });
+      return await response.json();
+    ''');
+    print('Created post ID: ${postResult['id']}');
+
+    // 错误处理
+    try {
+      await runtime.evalAsync('''
+        throw new Error('Something went wrong');
+      ''');
+    } catch (e) {
+      print('Caught error: $e');
+    }
+  } finally {
     runtime.dispose();
   }
 }
@@ -147,6 +201,273 @@ runtime.dispose();
 
 ## 高级用法
 
+### 运行时配置 (JsRuntimeConfig)
+
+`JsRuntimeConfig` 用于配置运行时的 polyfill 和功能：
+
+```dart
+final runtime = JsRuntime(
+  memoryLimit: 32 * 1024 * 1024,  // 内存限制
+  maxStackSize: 256 * 1024,        // 栈大小
+  config: JsRuntimeConfig(
+    enableFetch: true,    // 启用 fetch API
+    enableConsole: true,  // 启用 console 日志捕获
+    enableTimer: true,    // 启用 setTimeout/setInterval
+    httpClient: myClient, // 可选：自定义 HTTP 客户端
+  ),
+);
+```
+
+配置选项：
+- `enableFetch`: 启用 JavaScript `fetch()` API
+- `enableConsole`: 启用 `console.log/warn/error/info/debug` 捕获
+- `enableTimer`: 启用 `setTimeout`/`setInterval`/`clearTimeout`/`clearInterval`
+- `httpClient`: 提供自定义 `http.Client` 用于 fetch 请求
+
+### Console 日志捕获
+
+当启用 `enableConsole` 时，可以捕获 JavaScript 的 console 输出：
+
+```dart
+final runtime = JsRuntime(
+  config: JsRuntimeConfig(enableConsole: true),
+);
+
+runtime.eval('''
+  console.log('Hello from JavaScript!');
+  console.warn('This is a warning');
+  console.error('This is an error');
+  console.log('Object:', { name: 'Test', value: 42 });
+''');
+
+// 获取所有日志
+for (final log in runtime.consoleLogs) {
+  print('[${log.level}] ${log.message}');
+}
+// 输出:
+// [log] Hello from JavaScript!
+// [warn] This is a warning
+// [error] This is an error
+// [log] Object: {"name":"Test","value":42}
+
+// 清除日志
+runtime.clearConsoleLogs();
+
+runtime.dispose();
+```
+
+#### 实时日志监听
+
+使用 `onConsoleLog` 流可以实时监听 JavaScript 的 console 输出：
+
+```dart
+final runtime = JsRuntime(
+  config: JsRuntimeConfig(enableConsole: true),
+);
+
+// 监听实时日志输出
+runtime.onConsoleLog.listen((log) {
+  print('[${log.timestamp}] [${log.level}] ${log.message}');
+});
+
+// JavaScript 代码执行时，日志会实时输出
+runtime.eval('''
+  console.log('This will be logged immediately');
+  console.error('Errors are also captured in real-time');
+''');
+
+// 异步代码的日志也会被捕获（需要手动 sync）
+runtime.eval('''
+  Promise.resolve().then(() => {
+    console.log('Async log');
+  });
+''');
+
+// 执行 Promise 任务后，同步日志
+runtime.executePendingJobs();
+
+runtime.dispose();
+```
+
+注意：
+- `onConsoleLog` 流在每次调用 `eval()` 或 `consoleLogs` getter 时自动同步日志
+- 对于异步代码（Promise），需要在 `executePendingJobs()` 后访问 `consoleLogs` 或手动调用同步
+- 使用 `evalAsync()` 会自动处理日志同步
+
+### Timer API (setTimeout/setInterval)
+
+当启用 `enableTimer` 时，可以使用 JavaScript 标准的定时器 API：
+
+```dart
+final runtime = JsRuntime(
+  config: JsRuntimeConfig(enableTimer: true),
+);
+
+// 基本 setTimeout - 使用 evalAsync 自动处理异步
+await runtime.evalAsync('''
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      console.log('Timeout fired!');
+      resolve('done');
+    }, 100);
+  });
+''');
+
+// setInterval 示例
+await runtime.evalAsync('''
+  return new Promise((resolve) => {
+    let count = 0;
+    const id = setInterval(() => {
+      count++;
+      console.log('Tick:', count);
+      if (count >= 3) {
+        clearInterval(id);
+        resolve(count);
+      }
+    }, 50);
+  });
+''');
+
+// clearTimeout 取消定时器
+await runtime.evalAsync('''
+  const id = setTimeout(() => {
+    console.log('This will not be called');
+  }, 1000);
+  clearTimeout(id);
+  return 'Timer cancelled';
+''');
+
+// 延时辅助函数
+runtime.eval('''
+  globalThis.delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+''');
+
+await runtime.evalAsync('''
+  console.log('Step 1');
+  await delay(50);
+  console.log('Step 2');
+  await delay(50);
+  console.log('Step 3');
+  return 'All steps completed';
+''');
+
+runtime.dispose();
+```
+
+支持的 Timer API：
+- ✅ `setTimeout(callback, delay)` - 延迟执行
+- ✅ `setInterval(callback, delay)` - 周期执行
+- ✅ `clearTimeout(id)` - 取消延迟执行
+- ✅ `clearInterval(id)` - 取消周期执行
+
+### Dart <-> JavaScript 双向通信 (JsBridge)
+
+JsBridge 提供了一个通用的 Dart 与 JavaScript 双向通信机制。配合 `evalAsync` 使用更加简洁：
+
+```dart
+import 'package:dart_quickjs/dart_quickjs.dart';
+
+void main() async {
+  // 使用配置创建运行时，自动启用 fetch 和 console
+  final runtime = JsRuntime(
+    config: JsRuntimeConfig(
+      enableFetch: true,
+      enableConsole: true,
+    ),
+  );
+
+  // 注册 Dart 处理器，可以从 JavaScript 调用
+  runtime.bridge!.registerHandler('math', (method, args) {
+    switch (method) {
+      case 'add':
+        return (args[0] as num) + (args[1] as num);
+      case 'multiply':
+        return (args[0] as num) * (args[1] as num);
+      default:
+        throw Exception('Unknown method: $method');
+    }
+  });
+
+  // 使用 evalAsync 调用 Dart 函数（自动处理 Promise）
+  final result = await runtime.evalAsync('''
+    return await __dart_bridge__.call('math', 'add', [10, 20]);
+  ''');
+  print(result); // 30
+
+  // 注册异步处理器
+  runtime.bridge!.registerHandler('async', (method, args) async {
+    if (method == 'compute') {
+      await Future.delayed(Duration(milliseconds: 100));
+      return (args[0] as num) * 2;
+    }
+    throw Exception('Unknown method');
+  });
+
+  // 调用异步处理器
+  final asyncResult = await runtime.evalAsync('''
+    return await __dart_bridge__.call('async', 'compute', [42]);
+  ''');
+  print(asyncResult); // 84
+
+  runtime.dispose();
+}
+```
+
+### Fetch API 支持
+
+使用 `evalAsync` 配合 Fetch API 非常简洁：
+
+```dart
+import 'package:dart_quickjs/dart_quickjs.dart';
+
+void main() async {
+  // 启用 fetch polyfill
+  final runtime = JsRuntime(
+    config: JsRuntimeConfig(enableFetch: true),
+  );
+
+  // GET 请求 - 使用 evalAsync 自动处理异步
+  final data = await runtime.evalAsync('''
+    const response = await fetch('https://jsonplaceholder.typicode.com/todos/1');
+    return await response.json();
+  ''');
+  print('Todo: ${data['title']}');
+
+  // POST 请求
+  final postResult = await runtime.evalAsync('''
+    const response = await fetch('https://jsonplaceholder.typicode.com/posts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Hello', body: 'World', userId: 1 })
+    });
+    return await response.json();
+  ''');
+  print('Created post ID: ${postResult['id']}');
+
+  // 并行请求
+  final results = await runtime.evalAsync('''
+    const [post1, post2] = await Promise.all([
+      fetch('https://jsonplaceholder.typicode.com/posts/1').then(r => r.json()),
+      fetch('https://jsonplaceholder.typicode.com/posts/2').then(r => r.json())
+    ]);
+    return { post1, post2 };
+  ''');
+  print('Post 1: ${results['post1']['title']}');
+  print('Post 2: ${results['post2']['title']}');
+
+  runtime.dispose();
+}
+```
+
+支持的 Fetch 功能：
+- ✅ GET, POST, PUT, DELETE, PATCH, HEAD 方法
+- ✅ 自定义请求头
+- ✅ JSON/文本请求体
+- ✅ Response 对象 (status, ok, headers, json(), text())
+- ✅ Headers 类
+- ✅ AbortController (基础支持)
+- ✅ 超时设置
+
 ### 内存限制
 
 ```dart
@@ -169,17 +490,49 @@ runtime.dispose();
 
 ### 执行异步任务
 
+使用 `evalAsync` 简化异步代码执行：
+
+```dart
+final runtime = JsRuntime(
+  config: JsRuntimeConfig(enableFetch: true),
+);
+
+// evalAsync 自动处理 Promise，直接返回结果
+final result = await runtime.evalAsync('''
+  return await Promise.resolve(42);
+''');
+print(result); // 42
+
+// 复杂的异步工作流
+runtime.eval('''
+  globalThis.api = {
+    async getUser(id) {
+      const response = await fetch('https://jsonplaceholder.typicode.com/users/' + id);
+      return await response.json();
+    }
+  };
+''');
+
+final user = await runtime.evalAsync('''
+  return await api.getUser(1);
+''');
+print('User: ${user['name']}'); // User: Leanne Graham
+
+runtime.dispose();
+```
+
+如果需要手动处理 Promise，仍然可以使用传统方式：
+
 ```dart
 final runtime = JsRuntime();
 
-// 执行包含 Promise 的代码
 runtime.eval('''
   Promise.resolve().then(() => {
     globalThis.result = 42;
   });
 ''');
 
-// 执行待处理的 Promise 任务
+// 手动执行待处理的 Promise 任务
 runtime.executePendingJobs();
 
 print(runtime.getGlobal('result')); // 42
