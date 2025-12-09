@@ -3,8 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dart_quickjs/dart_quickjs.dart';
 import 'package:flutter_code_editor/flutter_code_editor.dart';
-import 'package:flutter_highlight/themes/a11y-dark.dart';
-import 'package:flutter_highlight/themes/monokai-sublime.dart';
 import 'package:highlight/languages/javascript.dart';
 
 void main() {
@@ -112,6 +110,7 @@ class _JavaScriptPlaygroundState extends State<JavaScriptPlayground> {
         enableConsole: true,
         enableTimer: true,
         enableEncoding: true,
+        enableWebSocket: true,
       ),
     );
 
@@ -243,7 +242,7 @@ class _JavaScriptPlaygroundState extends State<JavaScriptPlayground> {
         children: [
           // 顶部工具栏
           _buildTopBar(),
-          const Divider(height: 1),
+          Divider(height: 1, color: Theme.of(context).dividerColor),
           // 主内容区
           Expanded(
             child: Row(
@@ -428,7 +427,7 @@ class _JavaScriptPlaygroundState extends State<JavaScriptPlayground> {
     final examples = _getExamples();
 
     return Container(
-      width: 220,
+      width: 240,
       color: const Color(0xFF252526),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -699,7 +698,7 @@ class _JavaScriptPlaygroundState extends State<JavaScriptPlayground> {
         ),
         if (_history.isNotEmpty && _history.first.duration != null) ...[
           const SizedBox(height: 12),
-          const Divider(height: 1),
+          Divider(height: 1, color: Theme.of(context).dividerColor),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -940,7 +939,7 @@ class _JavaScriptPlaygroundState extends State<JavaScriptPlayground> {
 
   Widget _buildDocPanel() {
     return Container(
-      width: 280,
+      width: 320,
       color: const Color(0xFF252526),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -971,6 +970,7 @@ class _JavaScriptPlaygroundState extends State<JavaScriptPlayground> {
                       '• Promise 和 async/await\n'
                       '• 定时器 (setTimeout/setInterval)\n'
                       '• Fetch API (网络请求)\n'
+                      '• WebSocket (实时通信)\n'
                       '• Console API (日志输出)',
                 ),
                 const SizedBox(height: 16),
@@ -1360,6 +1360,261 @@ test();'''),
     };
 }
 test();'''),
+        ],
+      ),
+      ExampleCategory(
+        name: 'WebSocket',
+        icon: Icons.swap_horiz,
+        examples: [
+          Example('基础连接', '''return new Promise((resolve) => {
+  const ws = new WebSocket('wss://ws.postman-echo.com/raw');
+  
+  ws.onopen = () => {
+    console.log('✓ WebSocket 连接已建立');
+    ws.send('Hello from Flutter!');
+  };
+  
+  ws.onmessage = (event) => {
+    console.log('📨 收到消息:', event.data);
+    ws.close();
+  };
+  
+  ws.onclose = (event) => {
+    console.log('✓ 连接已关闭');
+    console.log('代码:', event.code, '原因:', event.reason || '(无)');
+    resolve('WebSocket 测试完成');
+  };
+  
+  ws.onerror = (event) => {
+    console.error('❌ 连接错误:', event.message);
+    resolve('错误: ' + event.message);
+  };
+});''', isAsync: true),
+          Example('多消息发送', '''return new Promise((resolve) => {
+  const ws = new WebSocket('wss://ws.postman-echo.com/raw');
+  const messages = ['消息1', '消息2', '消息3'];
+  let received = 0;
+  
+  ws.onopen = () => {
+    console.log('✓ 连接建立');
+    messages.forEach((msg, i) => {
+      console.log(\`📤 发送 \${i + 1}: \${msg}\`);
+      ws.send(msg);
+    });
+  };
+  
+  ws.onmessage = (event) => {
+    received++;
+    console.log(\`📥 收到 \${received}: \${event.data}\`);
+    
+    if (received === messages.length) {
+      console.log('✓ 所有消息已接收');
+      ws.close();
+    }
+  };
+  
+  ws.onclose = () => {
+    resolve(\`完成! 发送 \${messages.length} 条,接收 \${received} 条\`);
+  };
+  
+  ws.onerror = (event) => {
+    console.error('❌ 错误:', event.message);
+    resolve('错误');
+  };
+});''', isAsync: true),
+          Example('状态监控', '''return new Promise((resolve) => {
+  const ws = new WebSocket('wss://ws.postman-echo.com/raw');
+  
+  function logState() {
+    const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+    console.log('当前状态:', states[ws.readyState]);
+  }
+  
+  console.log('创建 WebSocket...');
+  logState();
+  
+  ws.onopen = () => {
+    console.log('\\n✓ onopen 触发');
+    logState();
+    console.log('发送测试消息...');
+    ws.send('State Test');
+  };
+  
+  ws.onmessage = (event) => {
+    console.log('\\n📨 onmessage 触发');
+    console.log('数据:', event.data);
+    logState();
+    
+    console.log('\\n准备关闭连接...');
+    ws.close(1000, 'Test complete');
+    logState();
+  };
+  
+  ws.onclose = (event) => {
+    console.log('\\n✓ onclose 触发');
+    console.log('关闭代码:', event.code);
+    console.log('关闭原因:', event.reason);
+    console.log('是否正常:', event.wasClean);
+    logState();
+    resolve('状态测试完成');
+  };
+  
+  ws.onerror = (event) => {
+    console.error('❌ onerror 触发:', event.message);
+    resolve('出错');
+  };
+});''', isAsync: true),
+          Example('JSON 通信', '''return new Promise((resolve) => {
+  const ws = new WebSocket('wss://ws.postman-echo.com/raw');
+  
+  ws.onopen = () => {
+    console.log('✓ 连接建立');
+    
+    const data = {
+      type: 'greeting',
+      user: 'Flutter User',
+      timestamp: Date.now(),
+      message: 'Hello from QuickJS!'
+    };
+    
+    const json = JSON.stringify(data);
+    console.log('📤 发送 JSON:', json);
+    ws.send(json);
+  };
+  
+  ws.onmessage = (event) => {
+    console.log('📥 收到数据:', event.data);
+    
+    try {
+      const received = JSON.parse(event.data);
+      console.log('✓ JSON 解析成功');
+      console.log('类型:', received.type);
+      console.log('用户:', received.user);
+      console.log('消息:', received.message);
+    } catch (e) {
+      console.log('ℹ️ 原始文本:', event.data);
+    }
+    
+    ws.close();
+  };
+  
+  ws.onclose = () => {
+    resolve('JSON 通信完成');
+  };
+  
+  ws.onerror = (event) => {
+    console.error('❌ 错误:', event.message);
+    resolve('错误');
+  };
+});''', isAsync: true),
+          Example('心跳检测', '''return new Promise((resolve) => {
+  const ws = new WebSocket('wss://ws.postman-echo.com/raw');
+  let heartbeatCount = 0;
+  let intervalId;
+  
+  ws.onopen = () => {
+    console.log('✓ 连接建立');
+    console.log('启动心跳检测 (每秒一次)\\n');
+    
+    intervalId = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        heartbeatCount++;
+        const ping = \`PING \${heartbeatCount}\`;
+        console.log(\`💓 发送心跳 \${heartbeatCount}\`);
+        ws.send(ping);
+        
+        if (heartbeatCount >= 3) {
+          console.log('\\n✓ 心跳测试完成');
+          clearInterval(intervalId);
+          ws.close();
+        }
+      }
+    }, 1000);
+  };
+  
+  ws.onmessage = (event) => {
+    console.log(\`💚 收到回应: \${event.data}\`);
+  };
+  
+  ws.onclose = () => {
+    clearInterval(intervalId);
+    console.log(\`\\n总共发送 \${heartbeatCount} 次心跳\`);
+    resolve('心跳检测完成');
+  };
+  
+  ws.onerror = (event) => {
+    clearInterval(intervalId);
+    console.error('❌ 错误:', event.message);
+    resolve('错误');
+  };
+});''', isAsync: true),
+          Example('错误处理', '''return new Promise((resolve) => {
+  console.log('测试 1: 连接无效地址');
+  const ws1 = new WebSocket('wss://invalid-websocket-url.example.com');
+  
+  ws1.onerror = (event) => {
+    console.log('✓ 错误被捕获:', event.message.substring(0, 80) + '...');
+  };
+  
+  ws1.onclose = (event) => {
+    console.log('✓ 连接已关闭');
+    console.log('代码:', event.code);
+    console.log('wasClean:', event.wasClean);
+    console.log('\\n测试 2: 立即关闭连接');
+    
+    const ws2 = new WebSocket('wss://ws.postman-echo.com/raw');
+    
+    ws2.onopen = () => {
+      console.log('✓ 连接建立后立即关闭');
+      ws2.close(1000, '立即关闭测试');
+    };
+    
+    ws2.onclose = (event) => {
+      console.log('✓ 正常关闭');
+      console.log('代码:', event.code, '原因:', event.reason);
+      resolve('错误处理测试完成');
+    };
+    
+    ws2.onerror = (event) => {
+      console.error('意外错误:', event.message);
+      resolve('意外错误');
+    };
+  };
+});''', isAsync: true),
+          Example('自定义 Headers', '''return new Promise((resolve) => {
+  console.log('使用自定义 Headers 连接...');
+  
+  // 创建带自定义 headers 的 WebSocket 连接
+  const ws = new WebSocket('wss://ws.postman-echo.com/raw', [], {
+    headers: {
+      'User-Agent': 'QuickJS-Flutter/1.0',
+      'X-Custom-Header': 'CustomValue',
+      'Authorization': 'Bearer token123'
+    }
+  });
+  
+  ws.onopen = () => {
+    console.log('✓ 连接已建立 (带自定义 headers)');
+    console.log('发送测试消息...');
+    ws.send('Hello with custom headers!');
+  };
+  
+  ws.onmessage = (event) => {
+    console.log('📨 收到回应:', event.data);
+    console.log('✓ Headers 测试成功');
+    ws.close();
+  };
+  
+  ws.onclose = (event) => {
+    console.log('连接已关闭');
+    resolve('自定义 Headers 测试完成');
+  };
+  
+  ws.onerror = (event) => {
+    console.error('❌ 错误:', event.message);
+    resolve('错误: ' + event.message);
+  };
+});''', isAsync: true),
         ],
       ),
     ];

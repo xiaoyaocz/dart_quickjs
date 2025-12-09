@@ -23,6 +23,7 @@ QuickJS-ng JavaScript 引擎的 Dart/Flutter 绑定。
 - ⏱️ Timer API (setTimeout/setInterval)
 - 📝 Console 日志捕获
 - 🔤 Encoding API (TextEncoder/TextDecoder/Base64)
+- 🔌 WebSocket API (WebSocket 连接支持)
 
 ## 快速开始
 
@@ -224,6 +225,7 @@ final runtime = JsRuntime(
 - `enableConsole`: 启用 `console.log/warn/error/info/debug` 捕获
 - `enableTimer`: 启用 `setTimeout`/`setInterval`/`clearTimeout`/`clearInterval`
 - `enableEncoding`: 启用 `TextEncoder`/`TextDecoder`/`atob`/`btoa`
+- `enableWebSocket`: 启用 `WebSocket` API
 - `httpClient`: 提供自定义 `http.Client` 用于 fetch 请求
 
 ### Console 日志捕获
@@ -448,6 +450,110 @@ runtime.dispose();
   - 支持 BOM 处理和错误处理选项
 - ✅ `btoa(string)` - 将 ASCII/Latin1 字符串编码为 Base64
 - ✅ `atob(base64)` - 将 Base64 字符串解码为 ASCII/Latin1
+
+### WebSocket API
+
+当启用 `enableWebSocket` 时，可以使用标准的 WebSocket API：
+
+```dart
+final runtime = JsRuntime(
+  config: JsRuntimeConfig(
+    enableWebSocket: true,
+    enableConsole: true,
+  ),
+);
+
+// 基本 WebSocket 连接
+await runtime.evalAsync('''
+  const ws = new WebSocket('wss://echo.websocket.org/');
+  
+  ws.onopen = function() {
+    console.log('Connected!');
+    ws.send('Hello WebSocket!');
+  };
+  
+  ws.onmessage = function(event) {
+    console.log('Received:', event.data);
+    ws.close();
+  };
+  
+  ws.onerror = function(error) {
+    console.error('Error:', error.message);
+  };
+  
+  ws.onclose = function(event) {
+    console.log('Closed:', event.code, event.reason);
+  };
+  
+  // 等待连接完成
+  await new Promise(resolve => {
+    ws.onclose = function(event) {
+      resolve();
+    };
+  });
+''');
+
+// 使用 addEventListener
+await runtime.evalAsync('''
+  const ws = new WebSocket('wss://echo.websocket.org/');
+  
+  ws.addEventListener('open', () => {
+    console.log('Connection opened');
+    ws.send('Test message');
+  });
+  
+  ws.addEventListener('message', (event) => {
+    console.log('Message:', event.data);
+    ws.close(1000, 'Normal closure');
+  });
+  
+  await new Promise(resolve => {
+    ws.addEventListener('close', resolve);
+  });
+''');
+
+// WebSocket 状态常量
+runtime.eval('''
+  console.log('CONNECTING:', WebSocket.CONNECTING); // 0
+  console.log('OPEN:', WebSocket.OPEN);             // 1
+  console.log('CLOSING:', WebSocket.CLOSING);       // 2
+  console.log('CLOSED:', WebSocket.CLOSED);         // 3
+''');
+
+runtime.dispose();
+```
+
+支持的 WebSocket API：
+- ✅ `WebSocket(url, protocols?, options?)` - 创建 WebSocket 连接
+  - `url`: WebSocket 服务器地址
+  - `protocols`: 可选的子协议数组
+  - `options`: 可选配置对象，支持 `headers` 属性用于自定义请求头
+- ✅ `send(data)` - 发送数据
+- ✅ `close(code?, reason?)` - 关闭连接
+- ✅ `onopen` / `onmessage` / `onerror` / `onclose` - 事件处理器
+- ✅ `addEventListener()` / `removeEventListener()` - 事件监听
+- ✅ `readyState` - 连接状态
+- ✅ `url` - 连接 URL
+- ✅ 状态常量: `CONNECTING`, `OPEN`, `CLOSING`, `CLOSED`
+
+#### 自定义 Headers
+
+```dart
+await runtime.evalAsync('''
+  // 使用自定义 headers 连接
+  const ws = new WebSocket('wss://your-server.com', [], {
+    headers: {
+      'Authorization': 'Bearer your-token',
+      'X-Custom-Header': 'custom-value',
+      'User-Agent': 'MyApp/1.0'
+    }
+  });
+  
+  ws.onopen = () => {
+    console.log('Connected with custom headers');
+  };
+''');
+```
 
 ### Dart <-> JavaScript 双向通信 (JsBridge)
 

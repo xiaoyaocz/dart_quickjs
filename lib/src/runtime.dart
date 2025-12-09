@@ -65,6 +65,12 @@ class JsRuntimeConfig {
   /// in the JavaScript context for UTF-8 encoding/decoding and Base64 operations.
   final bool enableEncoding;
 
+  /// Enable the WebSocket polyfill.
+  ///
+  /// When enabled, provides `WebSocket` class in the JavaScript context,
+  /// powered by Dart's web_socket_channel package.
+  final bool enableWebSocket;
+
   /// Custom http.Client for fetch requests (useful for testing or custom configuration).
   final dynamic httpClient;
 
@@ -73,6 +79,7 @@ class JsRuntimeConfig {
     this.enableConsole = false,
     this.enableTimer = false,
     this.enableEncoding = false,
+    this.enableWebSocket = false,
     this.httpClient,
   });
 
@@ -85,6 +92,7 @@ class JsRuntimeConfig {
     enableConsole: true,
     enableTimer: true,
     enableEncoding: true,
+    enableWebSocket: true,
   );
 }
 
@@ -118,6 +126,9 @@ class JsRuntime {
 
   /// The encoding polyfill instance (if enabled).
   EncodingPolyfill? _encodingPolyfill;
+
+  /// The WebSocket polyfill instance (if enabled).
+  WebSocketPolyfill? _webSocketPolyfill;
 
   /// The bridge instance for Dart-JS communication.
   JsBridge? _bridge;
@@ -187,6 +198,9 @@ class JsRuntime {
 
   /// Returns the encoding polyfill instance (if enabled).
   EncodingPolyfill? get encodingPolyfill => _encodingPolyfill;
+
+  /// Returns the WebSocket polyfill instance (if enabled).
+  WebSocketPolyfill? get webSocketPolyfill => _webSocketPolyfill;
 
   /// Returns the bridge instance for Dart-JS communication.
   JsBridge? get bridge => _bridge;
@@ -558,6 +572,7 @@ class JsRuntime {
 
     // Clean up polyfills first (before setting _disposed flag)
     _timerPolyfill?.dispose();
+    _webSocketPolyfill?.dispose();
 
     // Close console log stream
     _consoleLogController?.close();
@@ -598,6 +613,14 @@ class JsRuntime {
     if (_config.enableEncoding) {
       _encodingPolyfill = EncodingPolyfill(this);
       _encodingPolyfill!.install();
+    }
+
+    // Initialize WebSocket polyfill
+    if (_config.enableWebSocket) {
+      _webSocketPolyfill = WebSocketPolyfill(this, bridge: _bridge);
+      _webSocketPolyfill!.install();
+      // WebSocket polyfill may reuse existing bridge or create its own
+      _bridge ??= _webSocketPolyfill!.bridge;
     }
   }
 
