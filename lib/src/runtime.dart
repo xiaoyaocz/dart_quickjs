@@ -71,6 +71,12 @@ class JsRuntimeConfig {
   /// powered by Dart's web_socket_channel package.
   final bool enableWebSocket;
 
+  /// Enable the URL polyfill.
+  ///
+  /// When enabled, provides `URL` and `URLSearchParams` classes in the JavaScript context
+  /// for URL parsing and manipulation.
+  final bool enableURL;
+
   /// Custom http.Client for fetch requests (useful for testing or custom configuration).
   final dynamic httpClient;
 
@@ -80,6 +86,7 @@ class JsRuntimeConfig {
     this.enableTimer = false,
     this.enableEncoding = false,
     this.enableWebSocket = false,
+    this.enableURL = false,
     this.httpClient,
   });
 
@@ -93,6 +100,7 @@ class JsRuntimeConfig {
     enableTimer: true,
     enableEncoding: true,
     enableWebSocket: true,
+    enableURL: true,
   );
 }
 
@@ -129,6 +137,9 @@ class JsRuntime {
 
   /// The WebSocket polyfill instance (if enabled).
   WebSocketPolyfill? _webSocketPolyfill;
+
+  /// The URL polyfill instance (if enabled).
+  URLPolyfill? _urlPolyfill;
 
   /// The bridge instance for Dart-JS communication.
   JsBridge? _bridge;
@@ -201,6 +212,9 @@ class JsRuntime {
 
   /// Returns the WebSocket polyfill instance (if enabled).
   WebSocketPolyfill? get webSocketPolyfill => _webSocketPolyfill;
+
+  /// Returns the URL polyfill instance (if enabled).
+  URLPolyfill? get urlPolyfill => _urlPolyfill;
 
   /// Returns the bridge instance for Dart-JS communication.
   JsBridge? get bridge => _bridge;
@@ -621,6 +635,12 @@ class JsRuntime {
       _webSocketPolyfill!.install();
       // WebSocket polyfill may reuse existing bridge or create its own
       _bridge ??= _webSocketPolyfill!.bridge;
+    }
+
+    // Initialize URL polyfill
+    if (_config.enableURL) {
+      _urlPolyfill = URLPolyfill(this);
+      _urlPolyfill!.install();
     }
   }
 

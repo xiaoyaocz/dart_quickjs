@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dart run:*)",
+      "Bash(dart test:*)"
+    ]
+  }
+}

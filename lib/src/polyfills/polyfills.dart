@@ -10,6 +10,7 @@
 /// - [TimerPolyfill] - setTimeout, setInterval, clearTimeout, clearInterval
 /// - [EncodingPolyfill] - TextDecoder, TextEncoder, and Base64 (atob/btoa)
 /// - [WebSocketPolyfill] - WebSocket API with web_socket_channel
+/// - [URLPolyfill] - URL and URLSearchParams APIs
 library;
 
 export 'console_polyfill.dart';
@@ -17,3 +18,4 @@ export 'encoding_polyfill.dart';
 export 'fetch_polyfill.dart';
 export 'timer_polyfill.dart';
 export 'websocket_polyfill.dart';
+export 'url_polyfill.dart';

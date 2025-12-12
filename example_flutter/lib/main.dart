@@ -111,6 +111,7 @@ class _JavaScriptPlaygroundState extends State<JavaScriptPlayground> {
         enableTimer: true,
         enableEncoding: true,
         enableWebSocket: true,
+        enableURL: true,
       ),
     );
 
@@ -1615,6 +1616,214 @@ test();'''),
     resolve('错误: ' + event.message);
   };
 });''', isAsync: true),
+        ],
+      ),
+      ExampleCategory(
+        name: 'URL',
+        icon: Icons.link,
+        examples: [
+          Example('URL 解析', '''(function() {
+    const url = new URL('https://user:pass@example.com:8080/path/to/page?key=value&foo=bar#section');
+
+    console.log('完整 URL:', url.href);
+    console.log('协议:', url.protocol);
+    console.log('用户名:', url.username);
+    console.log('密码:', url.password);
+    console.log('主机名:', url.hostname);
+    console.log('端口:', url.port);
+    console.log('路径:', url.pathname);
+    console.log('查询:', url.search);
+    console.log('哈希:', url.hash);
+    console.log('源:', url.origin);
+
+    return {
+        protocol: url.protocol,
+        hostname: url.hostname,
+        port: url.port,
+        pathname: url.pathname
+    };
+})()'''),
+          Example('URL 修改', '''(function() {
+    const url = new URL('https://example.com/old-path');
+    console.log('原始 URL:', url.href);
+
+    // 修改各个部分
+    url.protocol = 'http:';
+    console.log('修改协议:', url.href);
+
+    url.hostname = 'newdomain.com';
+    console.log('修改主机:', url.href);
+
+    url.port = '3000';
+    console.log('修改端口:', url.href);
+
+    url.pathname = '/new-path/page';
+    console.log('修改路径:', url.href);
+
+    url.search = '?updated=true';
+    console.log('修改查询:', url.href);
+
+    url.hash = '#new-section';
+    console.log('修改哈希:', url.href);
+
+    return url.href;
+})()'''),
+          Example('相对 URL', '''(function() {
+    const base = new URL('https://example.com/path/to/page.html');
+    console.log('基础 URL:', base.href);
+
+    // 相对路径
+    const rel1 = new URL('other.html', base);
+    console.log('相对文件:', rel1.href);
+
+    const rel2 = new URL('./sibling.html', base);
+    console.log('同级文件:', rel2.href);
+
+    const rel3 = new URL('../parent.html', base);
+    console.log('父级文件:', rel3.href);
+
+    const rel4 = new URL('/absolute/path.html', base);
+    console.log('绝对路径:', rel4.href);
+
+    return {
+        base: base.href,
+        relative: rel1.href,
+        absolute: rel4.href
+    };
+})()'''),
+          Example('URLSearchParams 基础', '''(function() {
+    // 从字符串创建
+    const params1 = new URLSearchParams('foo=1&bar=2&baz=3');
+    console.log('从字符串:', params1.toString());
+    console.log('获取 foo:', params1.get('foo'));
+
+    // 从对象创建
+    const params2 = new URLSearchParams({
+        name: 'John',
+        age: '30',
+        city: 'Beijing'
+    });
+    console.log('\\n从对象:', params2.toString());
+
+    // 从数组创建
+    const params3 = new URLSearchParams([
+        ['key1', 'value1'],
+        ['key2', 'value2']
+    ]);
+    console.log('\\n从数组:', params3.toString());
+
+    return params1.toString();
+})()'''),
+          Example('URLSearchParams 操作', '''(function() {
+    const params = new URLSearchParams();
+
+    // 添加参数
+    params.append('color', 'red');
+    params.append('color', 'blue');
+    params.append('size', 'large');
+    console.log('添加后:', params.toString());
+
+    // 获取参数
+    console.log('\\nget color:', params.get('color'));
+    console.log('getAll color:', params.getAll('color'));
+    console.log('has size:', params.has('size'));
+
+    // 设置参数（替换所有同名参数）
+    params.set('color', 'green');
+    console.log('\\nset color:', params.toString());
+
+    // 删除参数
+    params.delete('size');
+    console.log('delete size:', params.toString());
+
+    // 排序
+    params.append('apple', '1');
+    params.append('zebra', '2');
+    console.log('\\n排序前:', params.toString());
+    params.sort();
+    console.log('排序后:', params.toString());
+
+    return params.toString();
+})()'''),
+          Example('URLSearchParams 遍历', '''(function() {
+    const params = new URLSearchParams('a=1&b=2&c=3&a=4');
+
+    console.log('forEach 遍历:');
+    params.forEach((value, key) => {
+        console.log(\`  \${key} = \${value}\`);
+    });
+
+    console.log('\\nkeys 遍历:');
+    for (const key of params.keys()) {
+        console.log(\`  key: \${key}\`);
+    }
+
+    console.log('\\nvalues 遍历:');
+    for (const value of params.values()) {
+        console.log(\`  value: \${value}\`);
+    }
+
+    console.log('\\nentries 遍历:');
+    for (const [key, value] of params.entries()) {
+        console.log(\`  \${key} = \${value}\`);
+    }
+
+    return 'done';
+})()'''),
+          Example('URL + SearchParams', '''(function() {
+    const url = new URL('https://api.example.com/search');
+
+    // 通过 searchParams 添加查询参数
+    url.searchParams.append('q', 'javascript');
+    url.searchParams.append('page', '1');
+    url.searchParams.append('limit', '10');
+
+    console.log('添加参数后:', url.href);
+    console.log('查询字符串:', url.search);
+
+    // 修改参数
+    url.searchParams.set('page', '2');
+    console.log('\\n修改 page:', url.href);
+
+    // 删除参数
+    url.searchParams.delete('limit');
+    console.log('删除 limit:', url.href);
+
+    // 遍历参数
+    console.log('\\n所有参数:');
+    for (const [key, value] of url.searchParams) {
+        console.log(\`  \${key}: \${value}\`);
+    }
+
+    return url.href;
+})()'''),
+          Example('URL 编码解码', '''(function() {
+    // URL 组件编码
+    const query = '你好世界';
+    const encoded = encodeURIComponent(query);
+    console.log('原始:', query);
+    console.log('编码:', encoded);
+    console.log('解码:', decodeURIComponent(encoded));
+
+    // URLSearchParams 自动处理编码
+    const params = new URLSearchParams();
+    params.append('message', '你好世界 & 特殊字符!');
+    params.append('emoji', '😀🎉');
+
+    console.log('\\nURLSearchParams 编码:');
+    console.log(params.toString());
+
+    console.log('\\n解码后:');
+    console.log('message:', params.get('message'));
+    console.log('emoji:', params.get('emoji'));
+
+    // 在 URL 中使用
+    const url = new URL('https://example.com/search');
+    url.searchParams.append('q', '搜索关键词');
+    console.log('\\n完整 URL:', url.href);
+
+    return params.get('message');
+})()'''),
         ],
       ),
     ];
