@@ -79,6 +79,15 @@ void main(List<String> args) async {
           '-fno-strict-aliasing', // Disable strict aliasing optimizations
           '-fno-omit-frame-pointer', // Keep frame pointer for better debugging
           '-fwrapv', // Wrap signed integer overflow (safer behavior)
+          // Bind references inside this library to its own definitions.
+          // Without this, the dynamic linker may resolve our internal calls to
+          // an equally named global symbol exported by another library loaded in
+          // the same process. Real case on Linux desktop: libmpv (media_kit)
+          // pulls in libmujs.so.3, which also exports `js_free`; our internal
+          // js_free(JSContext*, void*) then called mujs's js_free(js_State*,
+          // void*), dereferencing a function pointer at ctx+0x10 and jumping to
+          // garbage -> SIGSEGV on the very first JS eval. See issue #1.
+          '-Wl,-Bsymbolic',
         ]);
         // Disable computed goto / direct dispatch on Linux
         // This prevents SIGSEGV when the library is loaded by another application
